@@ -483,6 +483,44 @@
         <tbody id="calcBody"></tbody>
       </table>
       <p class="hours-sub" id="calcHolidayList" style="margin-top:12px"></p>
+
+      <h4 class="hours-title" style="font-size:0.92rem;margin-top:18px">Годишна проверка — плащат ли ти достатъчно?</h4>
+      <p class="hours-sub">
+        Приема се, че получаваш горната месечна заплата постоянно през цялата календарна година, за същата смяна.
+        „Минимална дължима годишна заплата“ е законовият ПОД (база на минималната работна заплата за всеки месец +
+        задължителна минимална нощна надбавка за реално отработените нощни часове + минимум 100% отгоре за часовете
+        на официални празници) — не е пазарна/справедлива заплата, а само законовият минимум, под който плащането е
+        нарушение.
+      </p>
+      <table class="hours-table">
+        <tbody id="calcAnnualBody"></tbody>
+      </table>
+
+      <h4 class="hours-title" style="font-size:0.92rem;margin-top:18px">Сравнение: редовна смяна срещу график на смени</h4>
+      <p class="hours-sub">
+        Сравнява реалния час на човек на редовна смяна (напр. чистачка — 8ч., Пон–Пет) с реалния час на човек на
+        график (12ч. смени, вкл. нощен труд), за избрания месец.
+      </p>
+      <div class="norm-row">
+        <span>Заплата — редовна смяна (напр. чистачка):</span>
+        <input type="number" id="cmpRegSalary" step="1" value="860" style="width:100px" />
+        <span>€</span>
+      </div>
+      <div class="norm-row">
+        <span>Смяна по график:</span>
+        <select id="cmpTeam">
+          <option value="А">А</option>
+          <option value="Б">Б</option>
+          <option value="Ц">Ц</option>
+          <option value="Д">Д</option>
+        </select>
+        <span>Заплата за месеца:</span>
+        <input type="number" id="cmpShiftSalary" step="1" placeholder="напр. 1200" style="width:100px" />
+        <span>€</span>
+      </div>
+      <table class="hours-table">
+        <tbody id="cmpBody"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -741,6 +779,32 @@
     return workDays * 8;
   }
 
+  // ------- годишна проверка: реално получавана vs минимално дължима заплата -------
+  // За всеки от 12-те месеца на годината: минимална часова ставка = минимална работна заплата / норма часове
+  // за месеца; минимална нощна надбавка = max(0,15% от МРЗ, 0,51 €/ч.) по чл. 8 НСОРЗ; часовете на официални
+  // празници се заплащат с поне +100% отгоре по чл. 156, ал. 1, т. 2 КТ. Сборът от 12-те месеца дава законовия
+  // ПОД на годишното възнаграждение — не пазарна оценка, а минимумът, под който плащането е нарушение на закона.
+  function annualSummary(team, year, minWage) {
+    let workedHours = 0, nightHours = 0, holidayHours = 0, recalculatedHours = 0, minFloor = 0;
+    for (let m = 0; m < 12; m++) {
+      const monthNorm = defaultMonthlyNorm(year, m);
+      const minHourlyRate = monthNorm > 0 ? minWage / monthNorm : 0;
+      const minNightSupplement = Math.max(minWage * 0.0015, 0.51);
+      if (team === "reg") {
+        workedHours += monthNorm;
+        minFloor += monthNorm * minHourlyRate;
+      } else {
+        const r = monthlyHoursForTeam(team, year, m);
+        workedHours += r.workedHours;
+        nightHours += r.nightHours;
+        holidayHours += r.holidayHours;
+        recalculatedHours += r.recalculatedHours;
+        minFloor += r.workedHours * minHourlyRate + r.nightHours * minNightSupplement + r.holidayHours * minHourlyRate;
+      }
+    }
+    return { workedHours, nightHours, holidayHours, recalculatedHours, minFloor };
+  }
+
   const normInput = document.getElementById("normInput");
   const normResetBtn = document.getElementById("normResetBtn");
   const hoursBody = document.getElementById("hoursBody");
@@ -806,6 +870,11 @@
   const calcMinWageEl = document.getElementById("calcMinWage");
   const calcBody = document.getElementById("calcBody");
   const calcHolidayListEl = document.getElementById("calcHolidayList");
+  const calcAnnualBody = document.getElementById("calcAnnualBody");
+  const cmpRegSalaryEl = document.getElementById("cmpRegSalary");
+  const cmpTeamEl = document.getElementById("cmpTeam");
+  const cmpShiftSalaryEl = document.getElementById("cmpShiftSalary");
+  const cmpBody = document.getElementById("cmpBody");
   const calcToggle = document.getElementById("calcToggle");
   const calcToggleArrow = document.getElementById("calcToggleArrow");
   const calcBodyWrap = document.getElementById("calcBodyWrap");
@@ -842,6 +911,8 @@
         <tr><td>Минимална часова ставка за страната (за месеца)</td><td colspan="6">${fmt(minHourlyRate)} €/ч.</td></tr>
         <tr><td>Проверка</td><td colspan="6" class="${meetsMinRate ? "diff-zero" : "diff-neg"}">${meetsMinRate ? "✓ над минималната работна заплата" : "⚠ под минималната работна заплата за страната"}</td></tr>
       `;
+      renderAnnual(team, year, salary, minWage);
+      renderCompare();
       return;
     }
 
@@ -875,11 +946,77 @@
       <tr><td>Минимална часова ставка за страната (за месеца)</td><td colspan="6">${fmt(minHourlyRate)} €/ч.</td></tr>
       <tr><td>Проверка спрямо минималната работна заплата</td><td colspan="6" class="${meetsMinRate ? "diff-zero" : "diff-neg"}">${meetsMinRate ? "✓ над минималната работна заплата" : "⚠ под минималната работна заплата за страната"}</td></tr>
     `;
+
+    renderAnnual(team, year, salary, minWage);
+    renderCompare();
+  }
+
+  function renderAnnual(team, year, monthlySalary, minWage) {
+    const a = annualSummary(team, year, minWage);
+    const actualAnnual = monthlySalary * 12;
+    const diff = actualAnnual - a.minFloor;
+    const ok = diff + 1e-9 >= 0;
+    const diffClass = ok ? "diff-zero" : "diff-neg";
+    const verdict = ok
+      ? "✓ Годишно получаваш поне толкова, колкото е законовият минимум."
+      : `⚠ Годишно получаваш по-малко от законовия минимум — липсват поне ${fmt(-diff)} € за ${year} г.`;
+
+    const extraRows = team === "reg"
+      ? ""
+      : `
+      <tr><td>от които нощни часове за годината</td><td colspan="6">${fmt(a.nightHours)} ч.</td></tr>
+      <tr><td>от които на официални празници</td><td colspan="6">${fmt(a.holidayHours)} ч.</td></tr>
+    `;
+
+    calcAnnualBody.innerHTML = `
+      <tr><td>Отработени часове за ${year} г. (общо)</td><td colspan="6">${fmt(a.workedHours)} ч.</td></tr>
+      ${extraRows}
+      <tr><td>Реално получавана годишна заплата (× 12 месеца)</td><td colspan="6">${fmt(actualAnnual)} €</td></tr>
+      <tr><td>Минимална дължима годишна заплата по закон</td><td colspan="6">${fmt(a.minFloor)} €</td></tr>
+      <tr><td>Разлика</td><td colspan="6" class="${diffClass}">${diff >= 0 ? "+" : ""}${fmt(diff)} €</td></tr>
+      <tr><td>Извод</td><td colspan="6" class="${diffClass}">${verdict}</td></tr>
+    `;
   }
 
   calcTeamEl.addEventListener("change", renderCalc);
   calcSalaryEl.addEventListener("input", renderCalc);
   calcMinWageEl.addEventListener("input", renderCalc);
+
+  // ------- сравнение: редовна смяна (напр. чистачка) срещу график на смени -------
+  // Показва реалния час на човек на редовна смяна (заплата / реално отработени часове, 8ч. Пон-Пет,
+  // без официални празници) срещу реалния час на човек на график (заплата / реално отработени часове,
+  // 12ч. смени с нощен труд) — за да се вижда прозрачно каква е разликата в €/ч. между двете.
+  function renderCompare() {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+
+    const regSalary = Number(cmpRegSalaryEl.value) || 0;
+    const regHours = defaultMonthlyNorm(year, month);
+    const regRate = regSalary > 0 && regHours > 0 ? regSalary / regHours : 0;
+
+    const cmpTeam = cmpTeamEl.value;
+    const shiftSalary = Number(cmpShiftSalaryEl.value) || 0;
+    const r = monthlyHoursForTeam(cmpTeam, year, month);
+    const shiftRealRate = shiftSalary > 0 && r.workedHours > 0 ? shiftSalary / r.workedHours : 0;
+    const shiftDayEquivRate = shiftSalary > 0 && r.recalculatedHours > 0 ? shiftSalary / r.recalculatedHours : 0;
+
+    const diffReal = shiftRealRate - regRate;
+    const diffPct = regRate > 0 ? (diffReal / regRate) * 100 : 0;
+    const diffClass = diffReal > 0 ? "diff-pos" : diffReal < 0 ? "diff-neg" : "diff-zero";
+
+    cmpBody.innerHTML = `
+      <tr><td>Редовна смяна — отработени часове</td><td colspan="6">${fmt(regHours)} ч.</td></tr>
+      <tr><td>Редовна смяна — реален час</td><td colspan="6">${fmt(regRate)} €/ч.</td></tr>
+      <tr><td>Смяна ${cmpTeam} — отработени часове</td><td colspan="6">${fmt(r.workedHours)} ч. (${r.dayShifts} дневни + ${r.nightShifts} нощни)</td></tr>
+      <tr><td>Смяна ${cmpTeam} — реален час (заплата / реално стоене)</td><td colspan="6">${fmt(shiftRealRate)} €/ч.</td></tr>
+      <tr><td>Смяна ${cmpTeam} — час по преизчислени часове (с нощна надбавка)</td><td colspan="6">${fmt(shiftDayEquivRate)} €/ч.</td></tr>
+      <tr><td>Разлика на час (график спрямо редовна смяна)</td><td colspan="6" class="${diffClass}">${diffReal >= 0 ? "+" : ""}${fmt(diffReal)} €/ч. (${diffPct >= 0 ? "+" : ""}${fmt(diffPct)}%)</td></tr>
+    `;
+  }
+
+  cmpRegSalaryEl.addEventListener("input", renderCompare);
+  cmpTeamEl.addEventListener("change", renderCompare);
+  cmpShiftSalaryEl.addEventListener("input", renderCompare);
 
   // ------- бързо търсене на смяна по дата -------
   const dayEl = document.getElementById("searchDay");
