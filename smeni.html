@@ -284,6 +284,71 @@
     .dow { font-size: 0.62rem; }
     .team-chip { font-size: 0.56rem; }
   }
+
+  /* карта: месечни часове по КТ */
+  .hours-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-top: 18px;
+  }
+  .hours-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .hours-sub {
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    margin: 0 0 14px;
+    line-height: 1.45;
+  }
+  .norm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    font-size: 0.85rem;
+  }
+  .norm-row input {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 7px 9px;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    width: 80px;
+  }
+  .hours-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .hours-table th, .hours-table td {
+    text-align: right;
+    padding: 7px 6px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+  }
+  .hours-table th:first-child, .hours-table td:first-child {
+    text-align: left;
+    font-family: var(--font-body);
+    font-weight: 600;
+  }
+  .hours-table thead th {
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .diff-pos { color: var(--amber); }
+  .diff-neg { color: #8fb3ff; }
+  .diff-zero { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -326,6 +391,67 @@
   </div>
 
   <div class="grid" id="grid"></div>
+
+  <div class="hours-card">
+    <h3 class="hours-title">Отработени часове за месеца (по КТ)</h3>
+    <p class="hours-sub">
+      Смените са 12 ч.: дневна 07:00–19:00 ч., нощна 19:00–07:00 ч., от която 8 часа попадат в нощния диапазон
+      22:00–06:00 ч. (чл. 140 КТ). При сумирано изчисляване на работното време тези нощни часове се преизчисляват
+      в дневни с коефициент 8/7 ≈ 1,143 (чл. 9, ал. 2 от Наредбата за структурата и организацията на работната
+      заплата) — т.е. към всеки отработен нощен час се добавят по 0,143 ч.
+    </p>
+    <div class="norm-row">
+      <span>Норма за месеца (обявена от МТСП):</span>
+      <input type="number" id="normInput" step="1" />
+      <span>ч.</span>
+      <button id="normResetBtn" class="search-btn" style="padding:6px 12px;font-size:0.78rem">Изчисли по подразбиране</button>
+    </div>
+    <table class="hours-table">
+      <thead>
+        <tr>
+          <th>Смяна</th>
+          <th>Дневни</th>
+          <th>Нощни</th>
+          <th>Реални ч.</th>
+          <th>Нощни ч. (22-06)</th>
+          <th>Преизч. ч.</th>
+          <th>Разлика с нормата</th>
+        </tr>
+      </thead>
+      <tbody id="hoursBody"></tbody>
+    </table>
+  </div>
+
+  <div class="hours-card">
+    <h3 class="hours-title">Калкулатор на часова ставка</h3>
+    <p class="hours-sub">
+      Въведи месечната заплата, която получаваш за избраната смяна и месец — калкулаторът смята часовата ставка,
+      като съобразява, че нощните часове (22:00–06:00 ч.) тежат повече по чл. 9, ал. 2 от Наредбата за структурата
+      и организацията на работната заплата (НСОРЗ, коефициент 8/7 ≈ 1,143), и проверява дали подразбиращата се
+      нощна надбавка покрива законовия минимум по чл. 8 НСОРЗ: не по-малко от 0,15% от минималната работна заплата
+      за страната на нощен час, но не по-малко от 0,51 €/ч.
+    </p>
+    <div class="norm-row">
+      <span>Смяна:</span>
+      <select id="calcTeam">
+        <option value="А">А</option>
+        <option value="Б">Б</option>
+        <option value="Ц">Ц</option>
+        <option value="Д">Д</option>
+      </select>
+      <span>Заплата за месеца:</span>
+      <input type="number" id="calcSalary" step="1" placeholder="напр. 1800" style="width:110px" />
+      <span>€</span>
+    </div>
+    <div class="norm-row">
+      <span>Минимална работна заплата за страната (за изчисляване на минималната нощна надбавка):</span>
+      <input type="number" id="calcMinWage" step="0.01" value="620.20" style="width:90px" />
+      <span>€</span>
+    </div>
+    <table class="hours-table">
+      <tbody id="calcBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script src="js/clock.js?v=1787273918"></script>
@@ -444,7 +570,163 @@
 
       gridEl.appendChild(cell);
     }
+
+    renderHours();
+    if (typeof renderCalc === "function") renderCalc();
   }
+
+  // ------- месечни часове по КТ (сумирано изчисляване на работното време) -------
+  // Правно основание:
+  //  - чл. 140 КТ: нощен труд = 22:00–06:00 ч.
+  //  - чл. 9, ал. 2 от Наредбата за структурата и организацията на работната
+  //    заплата: при СИРВ нощните часове се превръщат в дневни с коефициент,
+  //    равен на отношението между нормалната продължителност на дневното (8 ч.)
+  //    и нощното (7 ч.) работно време = 8/7 ≈ 1,143, т.е. +0,143 ч. добавка
+  //    за всеки отработен нощен час.
+  //  - Нормата за периода (чл. 9б от Наредбата за работното време) се обявява
+  //    от МТСП за всеки месец = работни дни × 8 ч., намалени с официалните
+  //    празници по чл. 154 КТ. Тук е сметната опростено (само пон.-пет., без
+  //    приспадане на празници) — редактирайте полето, ако имате точната
+  //    обявена норма за месеца.
+  const SHIFT_HOURS = 12;
+  const NIGHT_WINDOW_START = 22; // 22:00
+  const NIGHT_WINDOW_END = 6;    // 06:00
+  const NIGHT_SHIFT_START = 19;  // нощната смяна стартира в 19:00 ч. и завършва в 07:00 ч.
+  const NIGHT_COEFF = 8 / 7;     // коефициент по чл. 9, ал. 2 НСОРЗ
+
+  function nightHoursInOneNightShift() {
+    let count = 0;
+    for (let h = 0; h < SHIFT_HOURS; h++) {
+      const clock = (NIGHT_SHIFT_START + h) % 24;
+      if (clock >= NIGHT_WINDOW_START || clock < NIGHT_WINDOW_END) count++;
+    }
+    return count;
+  }
+  const NIGHT_HOURS_PER_SHIFT = nightHoursInOneNightShift(); // = 8 при старт 19:00
+
+  function monthlyHoursForTeam(team, year, month) {
+    const days = daysInMonth(year, month);
+    let dayShifts = 0, nightShifts = 0;
+    for (let d = 1; d <= days; d++) {
+      const t = shiftType(team, Date.UTC(year, month, d));
+      if (t === "D") dayShifts++;
+      else if (t === "N") nightShifts++;
+    }
+    const workedHours = (dayShifts + nightShifts) * SHIFT_HOURS;
+    const nightHours = nightShifts * NIGHT_HOURS_PER_SHIFT;
+    const recalculatedHours = workedHours + nightHours * (NIGHT_COEFF - 1);
+    return { dayShifts, nightShifts, workedHours, nightHours, recalculatedHours };
+  }
+
+  function defaultMonthlyNorm(year, month) {
+    const days = daysInMonth(year, month);
+    let workDays = 0;
+    for (let d = 1; d <= days; d++) {
+      const dow = new Date(year, month, d).getDay();
+      if (dow !== 0 && dow !== 6) workDays++;
+    }
+    return workDays * 8;
+  }
+
+  const normInput = document.getElementById("normInput");
+  const normResetBtn = document.getElementById("normResetBtn");
+  const hoursBody = document.getElementById("hoursBody");
+  let normTouchedForKey = null; // "год-мес" за което потребителят е пипал ръчно нормата
+
+  function fmt(n) {
+    return (Math.round(n * 100) / 100).toString().replace(".", ",");
+  }
+
+  function renderHours() {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const key = `${year}-${month}`;
+
+    if (normTouchedForKey !== key) {
+      normInput.value = defaultMonthlyNorm(year, month);
+    }
+    const norm = Number(normInput.value) || 0;
+
+    hoursBody.innerHTML = "";
+    TEAM_ORDER.forEach((team) => {
+      const r = monthlyHoursForTeam(team, year, month);
+      const diff = r.recalculatedHours - norm;
+      const diffClass = diff > 0 ? "diff-pos" : diff < 0 ? "diff-neg" : "diff-zero";
+      const diffLabel = diff > 0 ? `+${fmt(diff)} (извънреден труд)` : diff < 0 ? fmt(diff) : "0";
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>Смяна ${team}</td>
+        <td>${r.dayShifts}</td>
+        <td>${r.nightShifts}</td>
+        <td>${fmt(r.workedHours)}</td>
+        <td>${fmt(r.nightHours)}</td>
+        <td>${fmt(r.recalculatedHours)}</td>
+        <td class="${diffClass}">${diffLabel}</td>
+      `;
+      hoursBody.appendChild(tr);
+    });
+  }
+
+  normInput.addEventListener("input", () => {
+    normTouchedForKey = `${viewDate.getFullYear()}-${viewDate.getMonth()}`;
+    renderHours();
+  });
+  normResetBtn.addEventListener("click", () => {
+    normTouchedForKey = null;
+    renderHours();
+  });
+
+  // ------- калкулатор на часова ставка -------
+  // Ставка на дневен час = заплата / преизчислени часове (реални + добавка за нощен труд).
+  // Ставка на нощен час = дневната ставка × коефициент 8/7, защото 1 нощен час = 1,143 дневни часа.
+  // Среден час = заплата / реално отработени часове (без преизчисление) — това е "часът, изкаран на смяна".
+  // Минимална нощна надбавка (чл. 8 от Наредбата за структурата и организацията на работната заплата,
+  // в сила от 01.01.2026 г.): не по-малко от 0,15% от минималната работна заплата за страната на нощен час,
+  // но не по-малко от 0,51 €/ч. Тази надбавка се дължи ДОПЪЛНИТЕЛНО към нормалното трудово възнаграждение
+  // за всеки отработен нощен час — калкулаторът само проверява дали заложената в заплатата ти разлика
+  // между нощен и дневен час покрива този минимум.
+  const calcTeamEl = document.getElementById("calcTeam");
+  const calcSalaryEl = document.getElementById("calcSalary");
+  const calcMinWageEl = document.getElementById("calcMinWage");
+  const calcBody = document.getElementById("calcBody");
+
+  function renderCalc() {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const team = calcTeamEl.value;
+    const salary = Number(calcSalaryEl.value) || 0;
+    const minWage = Number(calcMinWageEl.value) || 0;
+    const r = monthlyHoursForTeam(team, year, month);
+
+    const dayRate = salary > 0 && r.recalculatedHours > 0 ? salary / r.recalculatedHours : 0;
+    const nightRate = dayRate * NIGHT_COEFF;
+    const avgRate = salary > 0 && r.workedHours > 0 ? salary / r.workedHours : 0;
+    const impliedNightSupplement = nightRate - dayRate;
+
+    const minNightSupplement = Math.max(minWage * 0.0015, 0.51);
+    const meetsMin = impliedNightSupplement + 1e-9 >= minNightSupplement;
+    const minRowClass = meetsMin ? "diff-zero" : "diff-neg";
+    const minRowNote = meetsMin
+      ? "✓ покрива минимума"
+      : `⚠ под минимума — трябват поне +${fmt(minNightSupplement - impliedNightSupplement)} €/ч. надбавка`;
+
+    calcBody.innerHTML = `
+      <tr><td>Реално отработени часове</td><td colspan="6">${fmt(r.workedHours)} ч. (${r.dayShifts} дневни + ${r.nightShifts} нощни смени)</td></tr>
+      <tr><td>от които нощни (22:00–06:00)</td><td colspan="6">${fmt(r.nightHours)} ч.</td></tr>
+      <tr><td>Преизчислени часове (за заплащане)</td><td colspan="6">${fmt(r.recalculatedHours)} ч.</td></tr>
+      <tr><td>Ставка на дневен час</td><td colspan="6">${fmt(dayRate)} €/ч.</td></tr>
+      <tr><td>Ставка на нощен час</td><td colspan="6">${fmt(nightRate)} €/ч.</td></tr>
+      <tr><td>Среден час (спрямо реално стоенето на смяна)</td><td colspan="6">${fmt(avgRate)} €/ч.</td></tr>
+      <tr><td>Заложена нощна надбавка в заплатата (на час)</td><td colspan="6">${fmt(impliedNightSupplement)} €/ч.</td></tr>
+      <tr><td>Законов минимум за нощна надбавка (чл. 8 НСОРЗ)</td><td colspan="6">${fmt(minNightSupplement)} €/ч.</td></tr>
+      <tr><td>Проверка</td><td colspan="6" class="${minRowClass}">${minRowNote}</td></tr>
+    `;
+  }
+
+  calcTeamEl.addEventListener("change", renderCalc);
+  calcSalaryEl.addEventListener("input", renderCalc);
+  calcMinWageEl.addEventListener("input", renderCalc);
 
   // ------- бързо търсене на смяна по дата -------
   const dayEl = document.getElementById("searchDay");
