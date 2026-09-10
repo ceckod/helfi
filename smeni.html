@@ -446,10 +446,10 @@
 
   <div class="hours-card">
     <button type="button" id="calcToggle" class="calc-toggle">
-      <h3 class="hours-title">Калкулатор на часова ставка</h3>
-      <span class="calc-toggle-arrow" id="calcToggleArrow">▸</span>
+      <h3 class="hours-title">Калкулатор на заплата — на ден и на час</h3>
+      <span class="calc-toggle-arrow open" id="calcToggleArrow">▾</span>
     </button>
-    <div id="calcBodyWrap" hidden>
+    <div id="calcBodyWrap">
       <p class="hours-sub">
         Въведи месечната заплата, която получаваш за избраната смяна (или за редовна 8-часова смяна) и месец —
         калкулаторът смята часовата ставка, като съобразява, че нощните часове (22:00–06:00 ч.) тежат повече по
@@ -496,31 +496,35 @@
         <tbody id="calcAnnualBody"></tbody>
       </table>
 
-      <h4 class="hours-title" style="font-size:0.92rem;margin-top:18px">Сравнение: редовна смяна срещу график на смени</h4>
+      <h4 class="hours-title" style="font-size:0.92rem;margin-top:18px">Редовна смяна срещу график — на ден и на час</h4>
       <p class="hours-sub">
-        Сравнява реалния час на човек на редовна смяна (напр. чистачка — 8ч., Пон–Пет) с реалния час на човек на
-        график (12ч. смени, вкл. нощен труд), за избрания месец.
+        Показва реално колко получава на ден и на час човек на редовна 8-часова дневна смяна (напр. Пон–Пет, без
+        нощен труд), и колко получаваш ти на график — отделно за дневна и отделно за нощна смяна (12ч., от които 8ч.
+        попадат в нощния диапазон 22:00–06:00 ч. по чл. 140 КТ), за избрания месец. Всичко е съобразено с нощната
+        надбавка (чл. 8 НСОРЗ), официалните празници (чл. 154 и чл. 156, ал. 1, т. 2 КТ) и минималната работна
+        заплата за страната.
       </p>
       <div class="norm-row">
-        <span>Заплата — редовна смяна (напр. чистачка):</span>
+        <span>Заплата — редовна смяна (8ч., дневен труд):</span>
         <input type="number" id="cmpRegSalary" step="1" value="860" style="width:100px" />
-        <span>€</span>
+        <span>€ / месец</span>
       </div>
       <div class="norm-row">
-        <span>Смяна по график:</span>
+        <span>Твоята смяна по график:</span>
         <select id="cmpTeam">
           <option value="А">А</option>
           <option value="Б">Б</option>
           <option value="Ц">Ц</option>
           <option value="Д">Д</option>
         </select>
-        <span>Заплата за месеца:</span>
-        <input type="number" id="cmpShiftSalary" step="1" placeholder="напр. 1200" style="width:100px" />
+        <span>Реална заплата за месеца:</span>
+        <input type="number" id="cmpShiftSalary" step="1" value="1220" style="width:100px" />
         <span>€</span>
       </div>
       <table class="hours-table">
         <tbody id="cmpBody"></tbody>
       </table>
+      <p class="hours-sub" id="cmpHolidayNote" style="margin-top:10px"></p>
     </div>
   </div>
 </div>
@@ -875,6 +879,7 @@
   const cmpTeamEl = document.getElementById("cmpTeam");
   const cmpShiftSalaryEl = document.getElementById("cmpShiftSalary");
   const cmpBody = document.getElementById("cmpBody");
+  const cmpHolidayNoteEl = document.getElementById("cmpHolidayNote");
   const calcToggle = document.getElementById("calcToggle");
   const calcToggleArrow = document.getElementById("calcToggleArrow");
   const calcBodyWrap = document.getElementById("calcBodyWrap");
@@ -903,11 +908,14 @@
 
     if (team === "reg") {
       const workedHours = monthNorm;
+      const workDays = workedHours / 8;
       const rate = salary > 0 && workedHours > 0 ? salary / workedHours : 0;
+      const payPerDay = rate * 8;
       const meetsMinRate = rate + 1e-9 >= minHourlyRate;
       calcBody.innerHTML = `
-        <tr><td>Отработени часове (8 ч./ден, Пон–Пет, без официални празници)</td><td colspan="6">${fmt(workedHours)} ч.</td></tr>
-        <tr><td>Часова ставка</td><td colspan="6">${fmt(rate)} €/ч.</td></tr>
+        <tr><td>Отработени часове (8 ч./ден, Пон–Пет, без официални празници)</td><td colspan="6">${fmt(workedHours)} ч. (${fmt(workDays)} дни)</td></tr>
+        <tr><td>Заплата на ден</td><td colspan="6"><b>${fmt(payPerDay)} €/ден</b></td></tr>
+        <tr><td>Часова ставка</td><td colspan="6"><b>${fmt(rate)} €/ч.</b></td></tr>
         <tr><td>Минимална часова ставка за страната (за месеца)</td><td colspan="6">${fmt(minHourlyRate)} €/ч.</td></tr>
         <tr><td>Проверка</td><td colspan="6" class="${meetsMinRate ? "diff-zero" : "diff-neg"}">${meetsMinRate ? "✓ над минималната работна заплата" : "⚠ под минималната работна заплата за страната"}</td></tr>
       `;
@@ -923,6 +931,11 @@
     const avgRate = salary > 0 && r.workedHours > 0 ? salary / r.workedHours : 0;
     const impliedNightSupplement = nightRate - dayRate;
 
+    const dayOnlyHours = SHIFT_HOURS - NIGHT_HOURS_PER_SHIFT; // 4 ч. извън 22:00–06:00 в нощната смяна
+    const dayShiftPay = dayRate * SHIFT_HOURS;                 // 1 дневна смяна (12ч, изцяло дневни часове)
+    const nightShiftPay = dayOnlyHours * dayRate + NIGHT_HOURS_PER_SHIFT * nightRate; // 1 нощна смяна (4ч дневни + 8ч нощни)
+    const nightShiftAvgHourly = nightShiftPay / SHIFT_HOURS;
+
     const minNightSupplement = Math.max(minWage * 0.0015, 0.51);
     const meetsMin = impliedNightSupplement + 1e-9 >= minNightSupplement;
     const minRowClass = meetsMin ? "diff-zero" : "diff-neg";
@@ -937,8 +950,9 @@
       <tr><td>от които нощни (22:00–06:00)</td><td colspan="6">${fmt(r.nightHours)} ч.</td></tr>
       <tr><td>от които на официален празник (чл. 156, ал. 1, т. 2 КТ — мин. +100%)</td><td colspan="6">${r.holidayShifts} смени (${fmt(r.holidayHours)} ч.)</td></tr>
       <tr><td>Преизчислени часове (за заплащане)</td><td colspan="6">${fmt(r.recalculatedHours)} ч.</td></tr>
-      <tr><td>Ставка на дневен час</td><td colspan="6">${fmt(dayRate)} €/ч.</td></tr>
-      <tr><td>Ставка на нощен час</td><td colspan="6">${fmt(nightRate)} €/ч.</td></tr>
+      <tr><td><b>За 1 дневна смяна (12ч) получаваш</b></td><td colspan="6"><b>${fmt(dayShiftPay)} € / смяна</b> (${fmt(dayRate)} €/ч.)</td></tr>
+      <tr><td><b>За 1 нощна смяна (12ч, вкл. 8ч в 22:00–06:00) получаваш</b></td><td colspan="6"><b>${fmt(nightShiftPay)} € / смяна</b> (средно ${fmt(nightShiftAvgHourly)} €/ч.)</td></tr>
+      <tr><td>— от които чисто нощен час (22:00–06:00)</td><td colspan="6">${fmt(nightRate)} €/ч.</td></tr>
       <tr><td>Среден час (спрямо реално стоенето на смяна)</td><td colspan="6">${fmt(avgRate)} €/ч.</td></tr>
       <tr><td>Заложена нощна надбавка в заплатата (на час)</td><td colspan="6">${fmt(impliedNightSupplement)} €/ч.</td></tr>
       <tr><td>Законов минимум за нощна надбавка (чл. 8 НСОРЗ)</td><td colspan="6">${fmt(minNightSupplement)} €/ч.</td></tr>
@@ -982,36 +996,74 @@
   calcSalaryEl.addEventListener("input", renderCalc);
   calcMinWageEl.addEventListener("input", renderCalc);
 
-  // ------- сравнение: редовна смяна (напр. чистачка) срещу график на смени -------
-  // Показва реалния час на човек на редовна смяна (заплата / реално отработени часове, 8ч. Пон-Пет,
-  // без официални празници) срещу реалния час на човек на график (заплата / реално отработени часове,
-  // 12ч. смени с нощен труд) — за да се вижда прозрачно каква е разликата в €/ч. между двете.
+  // ------- сравнение: редовна смяна срещу график на смени, на ден и на час -------
+  // Редовна смяна (8ч., Пон-Пет, без нощен труд): заплата на ден = заплата / отработени дни;
+  // заплата на час = заплата / отработени часове (норма за месеца по чл. 154 КТ, без празници).
+  //
+  // График (12ч. смени): заплатата се разпределя между дневните и нощните часове чрез коефициента
+  // 8/7 по чл. 9, ал. 2 НСОРЗ (виж monthlyHoursForTeam/renderCalc по-горе), откъдето:
+  //   - 1 дневна смяна (12ч., изцяло извън 22:00–06:00) = 12 × дневна ставка;
+  //   - 1 нощна смяна (12ч., от които 8ч. в 22:00–06:00 и 4ч. извън) =
+  //     4 × дневна ставка + 8 × нощна ставка.
+  // Официалните празници (чл. 156, ал. 1, т. 2 КТ) се показват отделно informative, тъй като се дължат
+  // ДОПЪЛНИТЕЛНО (мин. +100%) над горните суми, а не са вградени в месечната заплата.
   function renderCompare() {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
 
+    // --- редовна смяна: на ден и на час ---
     const regSalary = Number(cmpRegSalaryEl.value) || 0;
     const regHours = defaultMonthlyNorm(year, month);
+    const regWorkDays = regHours / 8;
     const regRate = regSalary > 0 && regHours > 0 ? regSalary / regHours : 0;
+    const regPayPerDay = regRate * 8;
 
+    // --- график: разбивка дневна/нощна смяна ---
     const cmpTeam = cmpTeamEl.value;
     const shiftSalary = Number(cmpShiftSalaryEl.value) || 0;
     const r = monthlyHoursForTeam(cmpTeam, year, month);
-    const shiftRealRate = shiftSalary > 0 && r.workedHours > 0 ? shiftSalary / r.workedHours : 0;
-    const shiftDayEquivRate = shiftSalary > 0 && r.recalculatedHours > 0 ? shiftSalary / r.recalculatedHours : 0;
 
-    const diffReal = shiftRealRate - regRate;
-    const diffPct = regRate > 0 ? (diffReal / regRate) * 100 : 0;
-    const diffClass = diffReal > 0 ? "diff-pos" : diffReal < 0 ? "diff-neg" : "diff-zero";
+    const dayRate = shiftSalary > 0 && r.recalculatedHours > 0 ? shiftSalary / r.recalculatedHours : 0;
+    const nightRate = dayRate * NIGHT_COEFF;
+    const dayOnlyHours = SHIFT_HOURS - NIGHT_HOURS_PER_SHIFT; // 4ч. извън нощния диапазон в нощна смяна
+
+    const dayShiftPay = dayRate * SHIFT_HOURS;                          // 1 дневна смяна (12ч.)
+    const nightShiftPay = dayOnlyHours * dayRate + NIGHT_HOURS_PER_SHIFT * nightRate; // 1 нощна смяна (12ч.)
+    const dayShiftHourly = dayRate;
+    const nightShiftHourly = nightShiftPay / SHIFT_HOURS;
+
+    const avgRate = shiftSalary > 0 && r.workedHours > 0 ? shiftSalary / r.workedHours : 0;
+
+    function diffRow(label, shiftValue, regValue) {
+      const diff = shiftValue - regValue;
+      const pct = regValue > 0 ? (diff / regValue) * 100 : 0;
+      const cls = diff > 0 ? "diff-pos" : diff < 0 ? "diff-neg" : "diff-zero";
+      return `<tr><td>${label}</td><td colspan="6" class="${cls}">${diff >= 0 ? "+" : ""}${fmt(diff)} (${pct >= 0 ? "+" : ""}${fmt(pct)}%)</td></tr>`;
+    }
 
     cmpBody.innerHTML = `
-      <tr><td>Редовна смяна — отработени часове</td><td colspan="6">${fmt(regHours)} ч.</td></tr>
-      <tr><td>Редовна смяна — реален час</td><td colspan="6">${fmt(regRate)} €/ч.</td></tr>
-      <tr><td>Смяна ${cmpTeam} — отработени часове</td><td colspan="6">${fmt(r.workedHours)} ч. (${r.dayShifts} дневни + ${r.nightShifts} нощни)</td></tr>
-      <tr><td>Смяна ${cmpTeam} — реален час (заплата / реално стоене)</td><td colspan="6">${fmt(shiftRealRate)} €/ч.</td></tr>
-      <tr><td>Смяна ${cmpTeam} — час по преизчислени часове (с нощна надбавка)</td><td colspan="6">${fmt(shiftDayEquivRate)} €/ч.</td></tr>
-      <tr><td>Разлика на час (график спрямо редовна смяна)</td><td colspan="6" class="${diffClass}">${diffReal >= 0 ? "+" : ""}${fmt(diffReal)} €/ч. (${diffPct >= 0 ? "+" : ""}${fmt(diffPct)}%)</td></tr>
+      <tr><td colspan="7"><b>Редовна смяна (8ч., дневен труд)</b></td></tr>
+      <tr><td>Отработени дни / часове</td><td colspan="6">${fmt(regWorkDays)} дни · ${fmt(regHours)} ч.</td></tr>
+      <tr><td>Получава на ден</td><td colspan="6"><b>${fmt(regPayPerDay)} € / ден</b></td></tr>
+      <tr><td>Получава на час</td><td colspan="6"><b>${fmt(regRate)} € / ч.</b></td></tr>
+
+      <tr><td colspan="7" style="padding-top:14px"><b>Смяна ${cmpTeam} по график (12ч.)</b></td></tr>
+      <tr><td>Дневни / нощни смени този месец</td><td colspan="6">${r.dayShifts} дневни + ${r.nightShifts} нощни</td></tr>
+      <tr><td>Ако е дневна смяна — получаваш</td><td colspan="6"><b>${fmt(dayShiftPay)} € / смяна</b> (${fmt(dayShiftHourly)} €/ч.)</td></tr>
+      <tr><td>Ако е нощна смяна — получаваш</td><td colspan="6"><b>${fmt(nightShiftPay)} € / смяна</b> (средно ${fmt(nightShiftHourly)} €/ч.)</td></tr>
+      <tr><td>— от които чисто нощен час (22:00–06:00)</td><td colspan="6">${fmt(nightRate)} €/ч.</td></tr>
+      <tr><td>Среден час за целия месец (общо стоене на смяна)</td><td colspan="6">${fmt(avgRate)} €/ч.</td></tr>
+
+      <tr><td colspan="7" style="padding-top:14px"><b>Разлика спрямо редовната смяна</b></td></tr>
+      ${diffRow("Дневна смяна — на ден (€)", dayShiftPay, regPayPerDay)}
+      ${diffRow("Дневна смяна — на час (€/ч.)", dayShiftHourly, regRate)}
+      ${diffRow("Нощна смяна — на ден (€)", nightShiftPay, regPayPerDay)}
+      ${diffRow("Нощна смяна — на час (€/ч.)", nightShiftHourly, regRate)}
     `;
+
+    cmpHolidayNoteEl.textContent = r.holidayShifts > 0
+      ? `През месеца ${r.holidayShifts} от смените на смяна ${cmpTeam} падат на официален празник (чл. 156, ал. 1, т. 2 КТ) — за тях се дължи ДОПЪЛНИТЕЛНО поне +100% върху горните суми, отгоре на месечната заплата.`
+      : `През месеца няма смени на смяна ${cmpTeam}, падащи на официален празник.`;
   }
 
   cmpRegSalaryEl.addEventListener("input", renderCompare);
