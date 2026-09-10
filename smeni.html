@@ -349,6 +349,28 @@
   .diff-pos { color: var(--amber); }
   .diff-neg { color: #8fb3ff; }
   .diff-zero { color: var(--text-dim); }
+
+  .calc-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--text);
+  }
+  .calc-toggle-arrow {
+    color: var(--text-dim);
+    font-size: 1rem;
+    transition: transform 0.15s ease;
+  }
+  .calc-toggle-arrow.open { transform: rotate(90deg); }
+  #calcBodyWrap { margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -423,34 +445,45 @@
   </div>
 
   <div class="hours-card">
-    <h3 class="hours-title">Калкулатор на часова ставка</h3>
-    <p class="hours-sub">
-      Въведи месечната заплата, която получаваш за избраната смяна и месец — калкулаторът смята часовата ставка,
-      като съобразява, че нощните часове (22:00–06:00 ч.) тежат повече по чл. 9, ал. 2 от Наредбата за структурата
-      и организацията на работната заплата (НСОРЗ, коефициент 8/7 ≈ 1,143), и проверява дали подразбиращата се
-      нощна надбавка покрива законовия минимум по чл. 8 НСОРЗ: не по-малко от 0,15% от минималната работна заплата
-      за страната на нощен час, но не по-малко от 0,51 €/ч.
-    </p>
-    <div class="norm-row">
-      <span>Смяна:</span>
-      <select id="calcTeam">
-        <option value="А">А</option>
-        <option value="Б">Б</option>
-        <option value="Ц">Ц</option>
-        <option value="Д">Д</option>
-      </select>
-      <span>Заплата за месеца:</span>
-      <input type="number" id="calcSalary" step="1" placeholder="напр. 1800" style="width:110px" />
-      <span>€</span>
+    <button type="button" id="calcToggle" class="calc-toggle">
+      <h3 class="hours-title">Калкулатор на часова ставка</h3>
+      <span class="calc-toggle-arrow" id="calcToggleArrow">▸</span>
+    </button>
+    <div id="calcBodyWrap" hidden>
+      <p class="hours-sub">
+        Въведи месечната заплата, която получаваш за избраната смяна (или за редовна 8-часова смяна) и месец —
+        калкулаторът смята часовата ставка, като съобразява, че нощните часове (22:00–06:00 ч.) тежат повече по
+        чл. 9, ал. 2 от Наредбата за структурата и организацията на работната заплата (НСОРЗ, коефициент 8/7 ≈
+        1,143), проверява дали подразбиращата се нощна надбавка покрива законовия минимум по чл. 8 НСОРЗ (не по-малко
+        от 0,15% от минималната работна заплата за страната на нощен час, но не по-малко от 0,51 €/ч.), взима предвид
+        официалните празници по чл. 154 КТ при изчисляване на нормата и сравнява резултата с минималната часова
+        ставка за страната.
+      </p>
+      <div class="norm-row">
+        <span>Смяна:</span>
+        <select id="calcTeam">
+          <option value="А">Смяна А (12ч, ротация)</option>
+          <option value="Б">Смяна Б (12ч, ротация)</option>
+          <option value="Ц">Смяна Ц (12ч, ротация)</option>
+          <option value="Д">Смяна Д (12ч, ротация)</option>
+          <option value="reg">Редовна смяна (8ч, Пон–Пет, без нощен труд)</option>
+        </select>
+      </div>
+      <div class="norm-row">
+        <span>Заплата за месеца:</span>
+        <input type="number" id="calcSalary" step="1" placeholder="напр. 1800" style="width:110px" />
+        <span>€</span>
+      </div>
+      <div class="norm-row">
+        <span>Минимална работна заплата за страната:</span>
+        <input type="number" id="calcMinWage" step="0.01" value="620.20" style="width:90px" />
+        <span>€ / месец</span>
+      </div>
+      <table class="hours-table">
+        <tbody id="calcBody"></tbody>
+      </table>
+      <p class="hours-sub" id="calcHolidayList" style="margin-top:12px"></p>
     </div>
-    <div class="norm-row">
-      <span>Минимална работна заплата за страната (за изчисляване на минималната нощна надбавка):</span>
-      <input type="number" id="calcMinWage" step="0.01" value="620.20" style="width:90px" />
-      <span>€</span>
-    </div>
-    <table class="hours-table">
-      <tbody id="calcBody"></tbody>
-    </table>
   </div>
 </div>
 
@@ -604,18 +637,98 @@
   }
   const NIGHT_HOURS_PER_SHIFT = nightHoursInOneNightShift(); // = 8 при старт 19:00
 
+  // ------- официални празници по чл. 154, ал. 1 КТ -------
+  // Фиксирани дати + Великден по православния календар (изчислен по алгоритъма
+  // на Гаус/Мийус за юлианска Пасха, превърнат в григориански дати за 1900-2099).
+  // Правило за преместване (чл. 154, ал. 3 КТ): когато фиксирана дата съвпада със
+  // събота или неделя, първият следващ работен ден става неприсъствен. (Опростено
+  // правило — при специални държавни решения, каквито имаше при въвеждането на
+  // еврото на 2 януари 2026 г., датите може да се различават от изчисленото тук.)
+  function orthodoxEasterUTC(year) {
+    const a = year % 4;
+    const b = year % 7;
+    const c = year % 19;
+    const d = (19 * c + 15) % 30;
+    const e = (2 * a + 4 * b - d + 34) % 7;
+    const month = Math.floor((d + e + 114) / 31); // 3 = март, 4 = април (юлиански)
+    const day = ((d + e + 114) % 31) + 1;
+    const julian = Date.UTC(year, month - 1, day);
+    return julian + 13 * DAY_MS; // юлиански → григориански за 1900-2099
+  }
+
+  function fixedHolidayDates(year) {
+    return [
+      [0, 1, "Нова година"],
+      [2, 3, "Ден на Освобождението на България"],
+      [4, 1, "Ден на труда"],
+      [4, 6, "Гергьовден, Ден на храбростта и Българската армия"],
+      [4, 24, "Ден на българската просвета и култура и на славянската писменост"],
+      [8, 6, "Ден на Съединението"],
+      [8, 22, "Ден на Независимостта на България"],
+      [11, 24, "Бъдни вечер"],
+      [11, 25, "Рождество Христово"],
+      [11, 26, "Втори ден на Коледа"],
+    ].map(([m, d, name]) => ({ ms: Date.UTC(year, m, d), name }));
+  }
+
+  function holidaysForYear(year) {
+    const list = fixedHolidayDates(year);
+
+    // премества фиксираните дати, паднали се в събота/неделя, към следващия работен ден
+    const extra = [];
+    list.forEach((h) => {
+      const dow = new Date(h.ms).getUTCDay();
+      if (dow === 0 || dow === 6) {
+        let shifted = h.ms + DAY_MS;
+        while ([0, 6].includes(new Date(shifted).getUTCDay()) || list.some((x) => x.ms === shifted)) {
+          shifted += DAY_MS;
+        }
+        extra.push({ ms: shifted, name: `${h.name} (почивен ден по чл. 154, ал. 3 КТ)` });
+      }
+    });
+
+    const easter = orthodoxEasterUTC(year);
+    const easterHolidays = [
+      { ms: easter - 2 * DAY_MS, name: "Велики петък" },
+      { ms: easter - 1 * DAY_MS, name: "Велика събота" },
+      { ms: easter, name: "Великден" },
+      { ms: easter + 1 * DAY_MS, name: "Великденски понеделник" },
+    ];
+
+    return [...list, ...extra, ...easterHolidays].sort((a, b) => a.ms - b.ms);
+  }
+
+  const holidayCache = {};
+  function isOfficialHoliday(year, month, day) {
+    if (!holidayCache[year]) holidayCache[year] = holidaysForYear(year);
+    const ms = Date.UTC(year, month, day);
+    return holidayCache[year].find((h) => h.ms === ms) || null;
+  }
+
+  function holidaysInMonth(year, month) {
+    const days = daysInMonth(year, month);
+    const out = [];
+    for (let d = 1; d <= days; d++) {
+      const h = isOfficialHoliday(year, month, d);
+      if (h) out.push({ day: d, name: h.name });
+    }
+    return out;
+  }
+
   function monthlyHoursForTeam(team, year, month) {
     const days = daysInMonth(year, month);
-    let dayShifts = 0, nightShifts = 0;
+    let dayShifts = 0, nightShifts = 0, holidayShifts = 0;
     for (let d = 1; d <= days; d++) {
       const t = shiftType(team, Date.UTC(year, month, d));
       if (t === "D") dayShifts++;
       else if (t === "N") nightShifts++;
+      if ((t === "D" || t === "N") && isOfficialHoliday(year, month, d)) holidayShifts++;
     }
     const workedHours = (dayShifts + nightShifts) * SHIFT_HOURS;
     const nightHours = nightShifts * NIGHT_HOURS_PER_SHIFT;
     const recalculatedHours = workedHours + nightHours * (NIGHT_COEFF - 1);
-    return { dayShifts, nightShifts, workedHours, nightHours, recalculatedHours };
+    const holidayHours = holidayShifts * SHIFT_HOURS;
+    return { dayShifts, nightShifts, workedHours, nightHours, recalculatedHours, holidayShifts, holidayHours };
   }
 
   function defaultMonthlyNorm(year, month) {
@@ -623,7 +736,7 @@
     let workDays = 0;
     for (let d = 1; d <= days; d++) {
       const dow = new Date(year, month, d).getDay();
-      if (dow !== 0 && dow !== 6) workDays++;
+      if (dow !== 0 && dow !== 6 && !isOfficialHoliday(year, month, d)) workDays++;
     }
     return workDays * 8;
   }
@@ -681,15 +794,29 @@
   // Ставка на дневен час = заплата / преизчислени часове (реални + добавка за нощен труд).
   // Ставка на нощен час = дневната ставка × коефициент 8/7, защото 1 нощен час = 1,143 дневни часа.
   // Среден час = заплата / реално отработени часове (без преизчисление) — това е "часът, изкаран на смяна".
-  // Минимална нощна надбавка (чл. 8 от Наредбата за структурата и организацията на работната заплата,
-  // в сила от 01.01.2026 г.): не по-малко от 0,15% от минималната работна заплата за страната на нощен час,
-  // но не по-малко от 0,51 €/ч. Тази надбавка се дължи ДОПЪЛНИТЕЛНО към нормалното трудово възнаграждение
-  // за всеки отработен нощен час — калкулаторът само проверява дали заложената в заплатата ти разлика
-  // между нощен и дневен час покрива този минимум.
+  // Минимална нощна надбавка (чл. 8 НСОРЗ, в сила от 01.01.2026 г.): не по-малко от 0,15% от минималната
+  // работна заплата за страната на нощен час, но не по-малко от 0,51 €/ч. Тази надбавка се дължи ДОПЪЛНИТЕЛНО
+  // към нормалното трудово възнаграждение за всеки отработен нощен час — калкулаторът само проверява дали
+  // заложената в заплатата ти разлика между нощен и дневен час покрива този минимум.
+  // Работа на официален празник (чл. 156, ал. 1, т. 2 КТ): не по-малко от 100% увеличение на уговореното
+  // възнаграждение за часовете, положени на официален празник — само информативно показано тук.
+  // Минимална часова ставка за страната: минимална работна заплата / норма часове за месеца (по чл. 154 КТ).
   const calcTeamEl = document.getElementById("calcTeam");
   const calcSalaryEl = document.getElementById("calcSalary");
   const calcMinWageEl = document.getElementById("calcMinWage");
   const calcBody = document.getElementById("calcBody");
+  const calcHolidayListEl = document.getElementById("calcHolidayList");
+  const calcToggle = document.getElementById("calcToggle");
+  const calcToggleArrow = document.getElementById("calcToggleArrow");
+  const calcBodyWrap = document.getElementById("calcBodyWrap");
+
+  calcToggle.addEventListener("click", () => {
+    const isOpen = !calcBodyWrap.hidden;
+    calcBodyWrap.hidden = isOpen;
+    calcToggleArrow.classList.toggle("open", !isOpen);
+    calcToggleArrow.textContent = isOpen ? "▸" : "▾";
+    if (!isOpen) renderCalc();
+  });
 
   function renderCalc() {
     const year = viewDate.getFullYear();
@@ -697,6 +824,27 @@
     const team = calcTeamEl.value;
     const salary = Number(calcSalaryEl.value) || 0;
     const minWage = Number(calcMinWageEl.value) || 0;
+    const monthNorm = defaultMonthlyNorm(year, month);
+    const minHourlyRate = monthNorm > 0 ? minWage / monthNorm : 0;
+
+    const holidays = holidaysInMonth(year, month);
+    calcHolidayListEl.textContent = holidays.length
+      ? `Официални празници през месеца (чл. 154 КТ): ${holidays.map((h) => `${h.day}.${month + 1} — ${h.name}`).join("; ")}.`
+      : "Няма официални празници през месеца.";
+
+    if (team === "reg") {
+      const workedHours = monthNorm;
+      const rate = salary > 0 && workedHours > 0 ? salary / workedHours : 0;
+      const meetsMinRate = rate + 1e-9 >= minHourlyRate;
+      calcBody.innerHTML = `
+        <tr><td>Отработени часове (8 ч./ден, Пон–Пет, без официални празници)</td><td colspan="6">${fmt(workedHours)} ч.</td></tr>
+        <tr><td>Часова ставка</td><td colspan="6">${fmt(rate)} €/ч.</td></tr>
+        <tr><td>Минимална часова ставка за страната (за месеца)</td><td colspan="6">${fmt(minHourlyRate)} €/ч.</td></tr>
+        <tr><td>Проверка</td><td colspan="6" class="${meetsMinRate ? "diff-zero" : "diff-neg"}">${meetsMinRate ? "✓ над минималната работна заплата" : "⚠ под минималната работна заплата за страната"}</td></tr>
+      `;
+      return;
+    }
+
     const r = monthlyHoursForTeam(team, year, month);
 
     const dayRate = salary > 0 && r.recalculatedHours > 0 ? salary / r.recalculatedHours : 0;
@@ -711,16 +859,21 @@
       ? "✓ покрива минимума"
       : `⚠ под минимума — трябват поне +${fmt(minNightSupplement - impliedNightSupplement)} €/ч. надбавка`;
 
+    const meetsMinRate = avgRate + 1e-9 >= minHourlyRate;
+
     calcBody.innerHTML = `
       <tr><td>Реално отработени часове</td><td colspan="6">${fmt(r.workedHours)} ч. (${r.dayShifts} дневни + ${r.nightShifts} нощни смени)</td></tr>
       <tr><td>от които нощни (22:00–06:00)</td><td colspan="6">${fmt(r.nightHours)} ч.</td></tr>
+      <tr><td>от които на официален празник (чл. 156, ал. 1, т. 2 КТ — мин. +100%)</td><td colspan="6">${r.holidayShifts} смени (${fmt(r.holidayHours)} ч.)</td></tr>
       <tr><td>Преизчислени часове (за заплащане)</td><td colspan="6">${fmt(r.recalculatedHours)} ч.</td></tr>
       <tr><td>Ставка на дневен час</td><td colspan="6">${fmt(dayRate)} €/ч.</td></tr>
       <tr><td>Ставка на нощен час</td><td colspan="6">${fmt(nightRate)} €/ч.</td></tr>
       <tr><td>Среден час (спрямо реално стоенето на смяна)</td><td colspan="6">${fmt(avgRate)} €/ч.</td></tr>
       <tr><td>Заложена нощна надбавка в заплатата (на час)</td><td colspan="6">${fmt(impliedNightSupplement)} €/ч.</td></tr>
       <tr><td>Законов минимум за нощна надбавка (чл. 8 НСОРЗ)</td><td colspan="6">${fmt(minNightSupplement)} €/ч.</td></tr>
-      <tr><td>Проверка</td><td colspan="6" class="${minRowClass}">${minRowNote}</td></tr>
+      <tr><td>Проверка на нощната надбавка</td><td colspan="6" class="${minRowClass}">${minRowNote}</td></tr>
+      <tr><td>Минимална часова ставка за страната (за месеца)</td><td colspan="6">${fmt(minHourlyRate)} €/ч.</td></tr>
+      <tr><td>Проверка спрямо минималната работна заплата</td><td colspan="6" class="${meetsMinRate ? "diff-zero" : "diff-neg"}">${meetsMinRate ? "✓ над минималната работна заплата" : "⚠ под минималната работна заплата за страната"}</td></tr>
     `;
   }
 
